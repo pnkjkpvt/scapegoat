@@ -16,8 +16,8 @@ PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)  # Session timeout after 30 m
 
 # Move sensitive data to environment variables
 API_TOKEN = os.getenv('API_TOKEN', '40a88ef3694a37489c0e045041d0ba4e')
-USERNAME = os.getenv('ADMIN_USERNAME', 'admin')  # Default for development only
-PASSWORD = os.getenv('ADMIN_PASSWORD', 'password123')  # Default for development only
+# Hardcoded user credentials
+USERS = {'admin': generate_password_hash('password123')}
 GIVE_UP_THRESHOLD = 0.9
 
 # Initialize Flask app with security headers
@@ -30,10 +30,10 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME
 )
 
-# Hardcoded user credentials db (in production, use a proper database)
-USERS = {
-    USERNAME: generate_password_hash(PASSWORD, method='pbkdf2:sha256:600000')
-}
+def authenticate_token():
+    if request.authorization and 'bearer' == request.authorization.type:
+        return API_TOKEN == request.authorization.token
+    return False
 
 # Security headers middleware
 @app.after_request
@@ -55,10 +55,15 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
-# Enhanced login required decorator with session expiry check
+# Enhanced login required decorator with support for both session and token auth
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # First check for token authentication
+        if authenticate_token():
+            return f(*args, **kwargs)
+        
+        # If no token or invalid token, check for session authentication
         if 'username' not in session:
             return redirect(url_for('login'))
         
@@ -173,7 +178,7 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route("/chat", methods=["POST"])
+@app.route('/chat', methods=["POST"])
 @login_required
 @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat():
@@ -190,7 +195,9 @@ def chat():
         if len(message) > 500:  # Limit message length
             return jsonify({"error": "Message too long"}), 400
 
-        logging.info(f"Message from {session['username']}: {message}")
+        # Get username from either session or API token
+        username = session.get('username', 'API_USER') if 'username' in session else 'API_USER'
+        logging.info(f"Message from {username}: {message}")
         
         response = None
         # Greetings
