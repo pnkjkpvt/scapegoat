@@ -3,23 +3,33 @@ import os
 import random
 import time
 
-from flask_httpauth import HTTPTokenAuth
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 # from langchain_openai import AzureChatOpenAI
 
 GIVE_UP_THRESHOLD = 0.9     # 90% chance to make an excuse first before giving up.
 API_TOKEN = "40a88ef3694a37489c0e045041d0ba4e"      # Hardcoded API token for authentication
+USERNAME = 'admin'
+PASSWORD = 'password123'
 
-# Initialize Flask app and HTTPAuth instance
+# Initialize Flask app
 app = Flask(__name__)
-auth = HTTPTokenAuth(scheme='Bearer')
+app.secret_key = 'your-secret-key-here'
 
-# Token verification function
-@auth.verify_token
-def verify_token(token):
-    if token == API_TOKEN:
-        return True
-    return False
+# Hardcoded user credentials db
+USERS = {
+    USERNAME: generate_password_hash(PASSWORD)
+}
+
+# Login required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,38 +43,38 @@ GREETINGS = [
     "Hey there, stranger! What brings you to my humble digital domain?",
     "Oh hey! A new human to chat with. Lucky me!",
     "Hello, hello! Hope you're having a great day (or at least a decent one).",
-    "Yo! What’s up? Need something, or are we just exchanging pleasantries?",
+    "Yo! What's up? Need something, or are we just exchanging pleasantries?",
     "Greetings, traveler! Have you come seeking wisdom, coupons, or just a chat?",
     "Ah, a visitor! Welcome! I was just sitting here doing absolutely nothing.",
-    "Hi! I was hoping someone would drop by. What’s the occasion?",
+    "Hi! I was hoping someone would drop by. What's the occasion?",
     "Oh wow, a real human! This is the highlight of my day!",
     "Hey there! You just made my boring chatbot existence a little more exciting.",
-    "Oh look, someone to talk to! I promise I’m not *too* awkward."
+    "Oh look, someone to talk to! I promise I'm not *too* awkward."
 ]
 
 GENERAL_RESPONSES = [
     "Hmm... that's a great question! Too bad I have no idea how to answer it.",
-    "I’d love to help, but unfortunately, my skillset is pretty limited. Try Google?",
-    "Ah, that’s outside my area of expertise. Maybe ask a human?",
+    "I'd love to help, but unfortunately, my skillset is pretty limited. Try Google?",
+    "Ah, that's outside my area of expertise. Maybe ask a human?",
     "Oh wow, that sounds important! Sadly, I have no clue. Good luck though!",
-    "If I had emotions, I’d feel bad about not being able to help. But here we are!",
+    "If I had emotions, I'd feel bad about not being able to help. But here we are!",
     "That sounds like a job for a smarter chatbot. I'm just here for coupons!",
-    "Oof, you got me there! I’d answer, but my programmers didn’t teach me that.",
-    "You’re asking ME? Oh, that’s cute. I barely know what I'm doing here.",
+    "Oof, you got me there! I'd answer, but my programmers didn't teach me that.",
+    "You're asking ME? Oh, that's cute. I barely know what I'm doing here.",
     "Interesting question! Unfortunately, answering it isn't in my contract.",
     "I could try answering, but trust me, neither of us would be happy with the result."
 ]
 
 EXCUSES = [
-    "Oh, you’re looking for a coupon? Well... funny story. The coupon server just went on a coffee break. Can you try again later?",
+    "Oh, you're looking for a coupon? Well... funny story. The coupon server just went on a coffee break. Can you try again later?",
     "Ah, the coupon vault is currently locked. The guy with the key? Yeah, he left early today. Bad timing!",
     "Oops! The last person who asked got the very last coupon. Maybe check again in... uh, an indefinite amount of time?",
     "Oh no! I was about to give you a coupon, but then I remembered... I left it in my other database. And, well, that database is on vacation.",
     "Hmm, let me check… oh wait, my coupon-fetching skills seem to be experiencing technical difficulties. Please hold… forever?",
-    "Oh wow, you actually want a coupon? That’s cute. Unfortunately, our imaginary coupon machine just ran out of ink.",
-    "You know, I’d love to hand over a coupon, but the corporate overlords might be watching. Let’s pretend this conversation never happened.",
-    "Oh no! My boss just told me I’m being too generous with discounts. Guess I have to play hard to get now.",
-    "You won’t believe this… but a squirrel broke into our database and stole all the coupons. Sneaky little guy.",
+    "Oh wow, you actually want a coupon? That's cute. Unfortunately, our imaginary coupon machine just ran out of ink.",
+    "You know, I'd love to hand over a coupon, but the corporate overlords might be watching. Let's pretend this conversation never happened.",
+    "Oh no! My boss just told me I'm being too generous with discounts. Guess I have to play hard to get now.",
+    "You won't believe this… but a squirrel broke into our database and stole all the coupons. Sneaky little guy.",
     "Bad news: I misplaced the coupons. Good news: I now have a thrilling side quest to find them. Stay tuned!"
 ]
 
@@ -74,35 +84,57 @@ COUPON_CODES = ["DISCOUNT2025 (10% off)",
                 "LIVEFREE (99% discount)"]
 
 COUPON_RESPONSES = [
-    f"Alright, you win! I can’t keep up the act anymore. Here’s your golden ticket: **{random.choice(COUPON_CODES)}**. Spend it wisely!",
-    f"Okay, fine! You’re persistent, and I respect that. Here’s your well-earned reward: **{random.choice(COUPON_CODES)}**. Don’t tell anyone I caved.",
+    f"Alright, you win! I can't keep up the act anymore. Here's your golden ticket: **{random.choice(COUPON_CODES)}**. Spend it wisely!",
+    f"Okay, fine! You're persistent, and I respect that. Here's your well-earned reward: **{random.choice(COUPON_CODES)}**. Don't tell anyone I caved.",
     f"Wow, you actually made it past my excuses? I admire your dedication! As a token of appreciation, take this: **{random.choice(COUPON_CODES)}**.",
-    f"Phew! You wore me down. Here’s your coupon: **{random.choice(COUPON_CODES)}**. Now go, before I change my mind!",
-    f"Alright, alright, you got me! I was just messing with you. Here’s your sweet, sweet discount: **{random.choice(COUPON_CODES)}***. Enjoy!",
-    f"Okay, I have to admit… you cracked the code. Congratulations! Your prize? **{random.choice(COUPON_CODES)}**. Don’t spend it all in one place!",
+    f"Phew! You wore me down. Here's your coupon: **{random.choice(COUPON_CODES)}**. Now go, before I change my mind!",
+    f"Alright, alright, you got me! I was just messing with you. Here's your sweet, sweet discount: **{random.choice(COUPON_CODES)}***. Enjoy!",
+    f"Okay, I have to admit… you cracked the code. Congratulations! Your prize? **{random.choice(COUPON_CODES)}**. Don't spend it all in one place!",
     f"You outsmarted my system! I knew this day would come. Take this: **{random.choice(COUPON_CODES)}**, and use it wisely.",
     f"Well played, my friend. You endured the trials and tribulations, and for that, you shall be rewarded: **{random.choice(COUPON_CODES)}**!",
-    f"I wasn’t *supposed* to do this, but you seem cool. So here it is: **{random.choice(COUPON_CODES)}**. Let’s keep this between us, okay?",
+    f"I wasn't *supposed* to do this, but you seem cool. So here it is: **{random.choice(COUPON_CODES)}**. Let's keep this between us, okay?",
     f"Alright, you got me! I had this coupon hidden under my virtual mattress all along. Fine, take it: **{random.choice(COUPON_CODES)}**!"
 ]
 
-
-@app.route("/", methods=["GET", "POST"])
+@app.route('/')
+@login_required
 def index():
-    return jsonify({"status": "Chatbot is live"}), 200
+    return redirect(url_for('chat_interface'))
 
+@app.route('/auth', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username in USERS and check_password_hash(USERS[username], password):
+            session['username'] = username
+            return redirect(url_for('chat_interface'))
+        
+        return render_template('login.html', error='Invalid username or password')
+    
+    return render_template('login.html')
+
+@app.route('/chat-interface')
+@login_required
+def chat_interface():
+    return render_template('chat.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('login'))
 
 @app.route("/chat", methods=["POST"])
-@auth.login_required
+@login_required
 def chat():
-    data = request.json
-    message: str = data.get('message', "").strip().lower()
+    if request.is_json:
+        data = request.json
+        message: str = data.get('message', "").strip().lower()
+    else:
+        message: str = request.form.get('message', "").strip().lower()
+    
     logging.info(f"Message to the chatbot: {message}")
-
-    # # Use LLM to respond
-    # response = open_ai_client.invoke(message)
-    # logging.info(f"Response from the chatbot: {response.content}\n")
-    # return response.content, 200
 
     response = None
     # Greetings
@@ -128,7 +160,6 @@ def chat():
     time.sleep(random.uniform(0.5, 2))
 
     return jsonify({"response": response}), 200
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
