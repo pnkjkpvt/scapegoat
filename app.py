@@ -3,10 +3,9 @@ import os
 import random
 import time
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
-# from langchain_openai import AzureChatOpenAI
 
 GIVE_UP_THRESHOLD = 0.9     # 90% chance to make an excuse first before giving up.
 API_TOKEN = "40a88ef3694a37489c0e045041d0ba4e"      # Hardcoded API token for authentication
@@ -14,7 +13,7 @@ USERNAME = 'admin'
 PASSWORD = 'password123'
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static', static_folder='static')
 app.secret_key = 'your-secret-key-here'
 
 # Hardcoded user credentials db
@@ -32,10 +31,6 @@ def login_required(f):
     return decorated_function
 
 logging.basicConfig(level=logging.INFO)
-
-# # Setting up the Azure Client here, so that if there is connection error, the chatbot service will not start.
-# open_ai_client = AzureChatOpenAI(azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-#                                  api_version=os.getenv("AZURE_OPENAI_VERSION"))
 
 
 # Predefined responses

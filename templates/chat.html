@@ -1,50 +1,120 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Chatbot</title>
+    <title>Scapegoat - Chat</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 0 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f0f2f5;
         }
-        #chat-container {
-            margin-top: 20px;
-        }
-        #message-input {
-            width: 80%;
-            padding: 10px;
-            margin-right: 10px;
-        }
-        button {
+        .header {
+            background-color: white;
             padding: 10px 20px;
-            background-color: #4CAF50;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            height: 40px;
+        }
+        .logout-btn {
+            padding: 8px 16px;
+            background-color: #dc3545;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .logout-btn:hover {
+            background-color: #c82333;
+        }
+        .main-content {
+            flex: 1;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
         }
         .message {
             margin: 10px 0;
-            padding: 10px;
-            border-radius: 4px;
+            padding: 12px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
         }
         .user-message {
             background-color: #e3f2fd;
-            text-align: right;
+            margin-left: auto;
+            color: #1565c0;
         }
         .bot-message {
             background-color: #f5f5f5;
+            margin-right: auto;
+            color: #333;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        #message-input:focus {
+            border-color: #4CAF50;
+            outline: none;
+        }
+        .send-btn {
+            padding: 12px 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .send-btn:hover {
+            background-color: #45a049;
         }
     </style>
 </head>
 <body>
-    <h1>Chatbot Interface</h1>
-    <div id="chat-container"></div>
-    <div style="margin-top: 20px;">
-        <input type="text" id="message-input" placeholder="Type your message...">
-        <button onclick="sendMessage()">Send</button>
+    <div class="header">
+        <img src="/static/logo.svg" alt="Scapegoat" class="logo">
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+    <div class="main-content">
+        <div id="chat-container"></div>
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button onclick="sendMessage()" class="send-btn">Send</button>
+        </div>
     </div>
 
     <script>
@@ -65,13 +135,18 @@
                 },
                 body: JSON.stringify({ message: message })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
                 addMessage(data.response, false);
             })
             .catch(error => {
                 console.error('Error:', error);
-                addMessage('Sorry, something went wrong!', false);
+                addMessage('Sorry, something went wrong! Please try again.', false);
             });
         }
 

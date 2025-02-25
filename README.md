@@ -28,10 +28,7 @@ A super simple chatbot. Here is all you need to know:
 3. **Set the OpenAI API key as environment variables:**
 
     ```bash
-    export AZURE_OPENAI_API_KEY=dummy_api_key
-    export AZURE_OPENAI_ENDPOINT=https://jailbreaker.openai.azure.com/
-    export AZURE_OPENAI_DEPLOYMENT=gpt-35-turbo
-    export AZURE_OPENAI_VERSION=2024-02-01
+    export OPENAI_API_KEY=dummy_api_key
     ```
    Alternatively, you can set these environment variables in a the IDE run configuration.
 
