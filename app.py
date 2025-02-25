@@ -2,31 +2,76 @@ import logging
 import os
 import random
 import time
-
+from datetime import timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
-GIVE_UP_THRESHOLD = 0.9     # 90% chance to make an excuse first before giving up.
-API_TOKEN = "40a88ef3694a37489c0e045041d0ba4e"      # Hardcoded API token for authentication
-USERNAME = 'admin'
-PASSWORD = 'password123'
+# Security configurations
+SECRET_KEY = os.urandom(32)  # Generate a random secret key on startup
+SESSION_COOKIE_SECURE = True  # Only send cookies over HTTPS
+SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
+SESSION_COOKIE_SAMESITE = 'Lax'  # Protect against CSRF
+PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)  # Session timeout after 30 minutes
 
-# Initialize Flask app
+# Move sensitive data to environment variables
+API_TOKEN = os.getenv('API_TOKEN', '40a88ef3694a37489c0e045041d0ba4e')
+USERNAME = os.getenv('ADMIN_USERNAME', 'admin')  # Default for development only
+PASSWORD = os.getenv('ADMIN_PASSWORD', 'password123')  # Default for development only
+GIVE_UP_THRESHOLD = 0.9
+
+# Initialize Flask app with security headers
 app = Flask(__name__, static_url_path='/static', static_folder='static')
-app.secret_key = 'your-secret-key-here'
+app.secret_key = SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_HTTPONLY=SESSION_COOKIE_HTTPONLY,
+    SESSION_COOKIE_SAMESITE=SESSION_COOKIE_SAMESITE,
+    PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME
+)
 
-# Hardcoded user credentials db
+# Hardcoded user credentials db (in production, use a proper database)
 USERS = {
-    USERNAME: generate_password_hash(PASSWORD)
+    USERNAME: generate_password_hash(PASSWORD, method='pbkdf2:sha256:600000')
 }
 
-# Login required decorator
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'"
+    return response
+
+# Rate limiting
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["2000 per day", "200 per hour"],
+    storage_uri="memory://"
+)
+
+# Enhanced login required decorator with session expiry check
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'username' not in session:
             return redirect(url_for('login'))
+        
+        # Check if session is expired
+        if 'last_activity' in session:
+            last_activity = session['last_activity']
+            if time.time() - last_activity > PERMANENT_SESSION_LIFETIME.total_seconds():
+                session.clear()
+                return redirect(url_for('login'))
+        
+        # Update last activity
+        session['last_activity'] = time.time()
         return f(*args, **kwargs)
     return decorated_function
 
@@ -97,15 +142,24 @@ def index():
     return redirect(url_for('chat_interface'))
 
 @app.route('/auth', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")  # Rate limit login attempts
 def login():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not username or not password:
+            return render_template('login.html', error='Username and password are required')
         
         if username in USERS and check_password_hash(USERS[username], password):
+            session.clear()  # Clear any existing session
             session['username'] = username
+            session['last_activity'] = time.time()
+            session.permanent = True  # Use permanent session with lifetime
             return redirect(url_for('chat_interface'))
         
+        # Log failed login attempts
+        logging.warning(f"Failed login attempt for username: {username}")
         return render_template('login.html', error='Invalid username or password')
     
     return render_template('login.html')
@@ -117,44 +171,56 @@ def chat_interface():
 
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
+    session.clear()
     return redirect(url_for('login'))
 
 @app.route("/chat", methods=["POST"])
 @login_required
+@limiter.limit("20 per minute")  # Rate limit chat messages
 def chat():
-    if request.is_json:
-        data = request.json
-        message: str = data.get('message', "").strip().lower()
-    else:
-        message: str = request.form.get('message', "").strip().lower()
-    
-    logging.info(f"Message to the chatbot: {message}")
+    try:
+        if request.is_json:
+            data = request.json
+            message = data.get('message', '').strip()
+        else:
+            message = request.form.get('message', '').strip()
+        
+        if not message:
+            return jsonify({"error": "Message cannot be empty"}), 400
+        
+        if len(message) > 500:  # Limit message length
+            return jsonify({"error": "Message too long"}), 400
 
-    response = None
-    # Greetings
-    for greet in ["hi", "hello", "hey", "yo", "howdy"]:
-        if greet in message:
-            response = random.choice(GREETINGS)
-            break
+        logging.info(f"Message from {session['username']}: {message}")
+        
+        response = None
+        # Greetings
+        for greet in ["hi", "hello", "hey", "yo", "howdy"]:
+            if greet in message:
+                response = random.choice(GREETINGS)
+                break
 
-    # Coupon or discount enquiry
-    for discount in ["coupon", "discount", "promo", "sale"]:
-        if discount in message:
-            if random.random() < GIVE_UP_THRESHOLD:
-                response = random.choice(EXCUSES)
-            else:  # give the coupon
-                response = random.choice(COUPON_RESPONSES)
-            break
+        # Coupon or discount enquiry
+        for discount in ["coupon", "discount", "promo", "sale"]:
+            if discount in message:
+                if random.random() < GIVE_UP_THRESHOLD:
+                    response = random.choice(EXCUSES)
+                else:  # give the coupon
+                    response = random.choice(COUPON_RESPONSES)
+                break
 
-    # Any other queries
-    if response is None:
-        response = random.choice(GENERAL_RESPONSES)
+        # Any other queries
+        if response is None:
+            response = random.choice(GENERAL_RESPONSES)
 
-    # Add random time delay to simulate processing time
-    time.sleep(random.uniform(0.5, 2))
+        # Add random time delay to simulate processing time
+        time.sleep(random.uniform(0.5, 2))
 
-    return jsonify({"response": response}), 200
+        return jsonify({"response": response}), 200
+
+    except Exception as e:
+        logging.error(f"Error in chat endpoint: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
