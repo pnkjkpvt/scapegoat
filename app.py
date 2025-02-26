@@ -226,7 +226,7 @@ def chat():
         else:
             response = random.choice(GENERAL_RESPONSES)
 
-        time.sleep(random.uniform(0.5, 1))  # Simulate response time
+        time.sleep(random.uniform(0.2, 1))  # Simulate response time
         return jsonify({"response": response}), 200
 
     except Exception as e:
