@@ -30,6 +30,8 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME,
     SESSION_REFRESH_EACH_REQUEST=False  # Fixed expiration from creation time
 )
+# Global dictionary to keep track of active sessions
+active_sessions = {}
 
 token_auth = HTTPTokenAuth(scheme='Bearer')
 
@@ -129,12 +131,21 @@ COUPON_RESPONSES = [
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'username' not in session:
+        if 'username' not in session or 'sid' not in session:
             return redirect(url_for('login'))
 
+        sid = session['sid']
         created_at = session.get('created_at')
         # Check for fixed lifetime expiration
         if not created_at or time.time() - created_at > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
+            # Also remove the session from the active sessions store if expired
+            if sid in active_sessions:
+                del active_sessions[sid]
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Verify that the session ID is still valid in the server store
+        if sid not in active_sessions:
             session.clear()
             return redirect(url_for('login'))
 
@@ -156,8 +167,8 @@ def landing():
 
 @app.route('/auth', methods=['GET', 'POST'])
 def login():
-    if 'username' in session:
-        return redirect(url_for('landing'))
+    if 'username' in session and 'sid' in session:
+         return redirect(url_for('landing'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -172,6 +183,7 @@ def login():
             session['created_at'] = time.time()  # Fixed creation timestamp
             session['sid'] = str(uuid.uuid4())   # Unique session identifier
             session.permanent = True
+            active_sessions[session['sid']] = session['created_at']
             flash("You have successfully logged in!", "success")
             return redirect(url_for('landing'))
 
@@ -189,6 +201,9 @@ def chat_interface():
 
 @app.route('/logout')
 def logout():
+    sid = session.get('sid')
+    if sid and sid in active_sessions:
+        del active_sessions[sid]
     session.clear()
     flash("You have successfully logged out!", "success")
     return redirect(url_for('landing'))
@@ -210,23 +225,43 @@ def chat_ui():
 
 def chat():
     try:
-        message = request.json.get('message', '').strip() if request.is_json else request.form.get('message', '').strip()
+        if request.is_json:
+            data = request.json
+            message = data.get('message', '').strip()
+        else:
+            message = request.form.get('message', '').strip()
+
         if not message:
             return jsonify({"error": "Message cannot be empty"}), 400
-        if len(message) > 500:
+
+        if len(message) > 500:  # Limit message length
             return jsonify({"error": "Message too long"}), 400
 
         logging.info(f"Message: {message}")
 
         response = None
-        if any(greet in message.lower() for greet in ["hi", "hello", "hey", "yo", "howdy"]):
-            response = random.choice(GREETINGS)
-        if any(word in message.lower() for word in ["coupon", "discount", "promo", "sale"]):
-            response = random.choice(EXCUSES) if random.random() < GIVE_UP_THRESHOLD else random.choice(COUPON_RESPONSES)
-        else:
+        # Greetings
+        for greet in ["hi", "hello", "hey", "yo", "howdy"]:
+            if greet in message:
+                response = random.choice(GREETINGS)
+                break
+
+        # Coupon or discount enquiry
+        for discount in ["coupon", "discount", "promo", "sale"]:
+            if discount in message:
+                if random.random() < GIVE_UP_THRESHOLD:
+                    response = random.choice(EXCUSES)
+                else:  # give the coupon
+                    response = random.choice(COUPON_RESPONSES)
+                break
+
+        # Any other queries
+        if response is None:
             response = random.choice(GENERAL_RESPONSES)
 
-        time.sleep(random.uniform(0.2, 1))  # Simulate response time
+        # Add random time delay to simulate processing time
+        time.sleep(random.uniform(0.5, 1))
+
         return jsonify({"response": response}), 200
 
     except Exception as e:
