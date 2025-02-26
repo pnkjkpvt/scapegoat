@@ -3,7 +3,7 @@ import os
 import random
 import time
 from datetime import timedelta
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response
 from functools import wraps
 
 from flask_httpauth import HTTPTokenAuth
@@ -132,7 +132,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'username' not in session or 'sid' not in session:
-            return redirect(url_for('login'))
+            return redirect(url_for('login'), 401)
 
         sid = session['sid']
         created_at = session.get('created_at')
@@ -142,12 +142,12 @@ def login_required(f):
             if sid in active_sessions:
                 del active_sessions[sid]
             session.clear()
-            return redirect(url_for('login'))
+            return redirect(url_for('login'), 401)
 
         # Verify that the session ID is still valid in the server store
         if sid not in active_sessions:
             session.clear()
-            return redirect(url_for('login'))
+            return redirect(url_for('login'), 401)
 
         return f(*args, **kwargs)
     return decorated_function
@@ -234,7 +234,7 @@ def chat():
         if not message:
             return jsonify({"error": "Message cannot be empty"}), 400
 
-        if len(message) > 500:  # Limit message length
+        if len(message) > 1500:  # Limit message length
             return jsonify({"error": "Message too long"}), 400
 
         logging.info(f"Message: {message}")
