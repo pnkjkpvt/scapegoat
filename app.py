@@ -162,7 +162,7 @@ def index():
 
 
 @app.route('/auth', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")  # Rate limit login attempts
+# @limiter.limit("50 per minute")  # Rate limit login attempts
 def login():
     # Clear any existing session when accessing login page
     if request.method == 'GET':
@@ -203,14 +203,14 @@ def logout():
 
 @app.route('/JSON/chat', methods=["POST"])
 @auth.login_required()
-@limiter.limit("20 per minute")  # Rate limit chat messages
+# @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat_json():
     return chat()
 
 
 @app.route('/UI/chat', methods=["POST"])
 @login_required
-@limiter.limit("20 per minute")  # Rate limit chat messages
+# @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat_ui():
     return chat()
 
