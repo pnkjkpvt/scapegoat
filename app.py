@@ -27,7 +27,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
     SESSION_COOKIE_HTTPONLY=SESSION_COOKIE_HTTPONLY,
     SESSION_COOKIE_SAMESITE=SESSION_COOKIE_SAMESITE,
-    PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME
+    PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME,
+    # SESSION_REFRESH_EACH_REQUEST=True,
 )
 
 def authenticate_token():
@@ -65,13 +66,14 @@ def login_required(f):
         
         # If no token or invalid token, check for session authentication
         if 'username' not in session:
+            session.clear()  # Clear any partial session data
             return redirect(url_for('login'))
         
         # Check if session is expired
         if 'last_activity' in session:
             last_activity = session['last_activity']
             if time.time() - last_activity > PERMANENT_SESSION_LIFETIME.total_seconds():
-                session.clear()
+                session.clear()  # Clear expired session
                 return redirect(url_for('login'))
         
         # Update last activity
@@ -148,6 +150,10 @@ def index():
 @app.route('/auth', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")  # Rate limit login attempts
 def login():
+    # Clear any existing session when accessing login page
+    if request.method == 'GET':
+        session.clear()
+        
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
