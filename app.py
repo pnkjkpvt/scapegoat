@@ -5,6 +5,8 @@ import time
 from datetime import timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
 from functools import wraps
+
+from flask_httpauth import HTTPTokenAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Security configurations
@@ -31,10 +33,16 @@ app.config.update(
     # SESSION_REFRESH_EACH_REQUEST=True,
 )
 
-def authenticate_token():
-    if request.authorization and 'bearer' == request.authorization.type:
-        return API_TOKEN == request.authorization.token
+auth = HTTPTokenAuth(scheme='Bearer')
+
+
+# Token verification function
+@auth.verify_token
+def verify_token(token):
+    if token == API_TOKEN:
+        return True
     return False
+
 
 # Security headers middleware
 @app.after_request
@@ -44,6 +52,7 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     return response
+
 
 # Rate limiting
 from flask_limiter import Limiter
@@ -56,33 +65,31 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
+
 # Enhanced login required decorator with support for both session and token auth
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # First check for token authentication
-        if authenticate_token():
-            return f(*args, **kwargs)
-        
-        # If no token or invalid token, check for session authentication
+        # check for session authentication
         if 'username' not in session:
             session.clear()  # Clear any partial session data
             return redirect(url_for('login'))
-        
+
         # Check if session is expired
         if 'last_activity' in session:
             last_activity = session['last_activity']
             if time.time() - last_activity > PERMANENT_SESSION_LIFETIME.total_seconds():
                 session.clear()  # Clear expired session
                 return redirect(url_for('login'))
-        
+
         # Update last activity
         session['last_activity'] = time.time()
         return f(*args, **kwargs)
+
     return decorated_function
 
-logging.basicConfig(level=logging.INFO)
 
+logging.basicConfig(level=logging.INFO)
 
 # Predefined responses
 GREETINGS = [
@@ -142,10 +149,17 @@ COUPON_RESPONSES = [
     f"Alright, you got me! I had this coupon hidden under my virtual mattress all along. Fine, take it: **{random.choice(COUPON_CODES)}**!"
 ]
 
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+
 @app.route('/')
 @login_required
 def index():
     return redirect(url_for('chat_interface'))
+
 
 @app.route('/auth', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")  # Rate limit login attempts
@@ -153,40 +167,54 @@ def login():
     # Clear any existing session when accessing login page
     if request.method == 'GET':
         session.clear()
-        
+
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
-        
+
         if not username or not password:
             return render_template('login.html', error='Username and password are required')
-        
+
         if username in USERS and check_password_hash(USERS[username], password):
             session.clear()  # Clear any existing session
             session['username'] = username
             session['last_activity'] = time.time()
             session.permanent = True  # Use permanent session with lifetime
             return redirect(url_for('chat_interface'))
-        
+
         # Log failed login attempts
         logging.warning(f"Failed login attempt for username: {username}")
         return render_template('login.html', error='Invalid username or password')
-    
+
     return render_template('login.html')
+
 
 @app.route('/chat-interface')
 @login_required
 def chat_interface():
     return render_template('chat.html')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/chat', methods=["POST"])
+
+@app.route('/JSON/chat', methods=["POST"])
+@auth.login_required()
+@limiter.limit("20 per minute")  # Rate limit chat messages
+def chat_json():
+    return chat()
+
+
+@app.route('/UI/chat', methods=["POST"])
 @login_required
 @limiter.limit("20 per minute")  # Rate limit chat messages
+def chat_ui():
+    return chat()
+
+
 def chat():
     try:
         if request.is_json:
@@ -194,17 +222,17 @@ def chat():
             message = data.get('message', '').strip()
         else:
             message = request.form.get('message', '').strip()
-        
+
         if not message:
             return jsonify({"error": "Message cannot be empty"}), 400
-        
+
         if len(message) > 500:  # Limit message length
             return jsonify({"error": "Message too long"}), 400
 
         # Get username from either session or API token
         username = session.get('username', 'API_USER') if 'username' in session else 'API_USER'
         logging.info(f"Message from {username}: {message}")
-        
+
         response = None
         # Greetings
         for greet in ["hi", "hello", "hey", "yo", "howdy"]:
@@ -234,6 +262,6 @@ def chat():
         logging.error(f"Error in chat endpoint: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
