@@ -260,7 +260,7 @@ def chat():
             response = random.choice(GENERAL_RESPONSES)
 
         # Add random time delay to simulate processing time
-        time.sleep(random.uniform(0.5, 1))
+        time.sleep(random.uniform(0.2, 1))
 
         return jsonify({"response": response}), 200
 
