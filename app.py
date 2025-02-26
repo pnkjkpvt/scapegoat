@@ -24,7 +24,7 @@ SECRET_KEY = os.urandom(32)  # Generate a random secret key on startup
 PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)  # Session timeout after 30 minutes
 app.secret_key = SECRET_KEY
 app.config.update(
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=False,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME,
