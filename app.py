@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import secrets
 import time
 from datetime import timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
@@ -14,7 +15,7 @@ SECRET_KEY = os.urandom(32)  # Generate a random secret key on startup
 SESSION_COOKIE_SECURE = True  # Only send cookies over HTTPS
 SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
 SESSION_COOKIE_SAMESITE = 'Lax'  # Protect against CSRF
-PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)  # Session timeout after 30 minutes
+PERMANENT_SESSION_LIFETIME = timedelta(minutes=5)  # Session timeout after 5 minutes of inactivity
 
 # Move sensitive data to environment variables
 API_TOKEN = os.getenv('API_TOKEN', '40a88ef3694a37489c0e045041d0ba4e')
@@ -54,32 +55,45 @@ def add_security_headers(response):
     return response
 
 
-# Rate limiting
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["2000 per day", "200 per hour"],
-    storage_uri="memory://"
-)
+def get_session_id():
+    """Generate a cryptographically secure random session identifier"""
+    session_id = secrets.token_hex(32)
+    
+    # Add a timestamp to help with session management
+    timestamp = str(int(time.time()))
+    
+    # Combine and hash the random token with timestamp 
+    combined = f"{session_id}|{timestamp}"
+    return generate_password_hash(combined)
 
 
-# Enhanced login required decorator with support for both session and token auth
+# Enhanced login required decorator with improved session validation
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # check for session authentication
+        # Check if user is logged in
         if 'username' not in session:
-            session.clear()  # Clear any partial session data
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Validate session ID
+        if 'session_id' not in session:
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Verify session ID matches current request
+        current_session_id = get_session_id()
+        if session['session_id'] != current_session_id:
+            logging.warning(f"Session ID mismatch. Possible session hijacking attempt.")
+            session.clear()
             return redirect(url_for('login'))
 
         # Check if session is expired
         if 'last_activity' in session:
             last_activity = session['last_activity']
             if time.time() - last_activity > PERMANENT_SESSION_LIFETIME.total_seconds():
-                session.clear()  # Clear expired session
+                session.clear()
                 return redirect(url_for('login'))
 
         # Update last activity
@@ -179,7 +193,8 @@ def login():
             session.clear()  # Clear any existing session
             session['username'] = username
             session['last_activity'] = time.time()
-            session.permanent = True  # Use permanent session with lifetime
+            session['session_id'] = get_session_id()  # Add session identifier
+            session.permanent = True
             return redirect(url_for('chat_interface'))
 
         # Log failed login attempts
