@@ -158,16 +158,18 @@ def health():
     return jsonify({"status": "healthy"}), 200
 
 
+# Landing Page Route
 @app.route('/')
-@login_required
-def index():
-    return redirect(url_for('chat_interface'))
+def landing():
+    username = session.get('username')
+    return render_template('landing.html', username=username)
 
 
 @app.route('/auth', methods=['GET', 'POST'])
 def login():
+    # If user is already logged in, redirect to landing page
     if 'username' in session and 'sid' in session:
-        return redirect(url_for('chat_interface'))
+         return redirect(url_for('landing'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -180,11 +182,10 @@ def login():
             session.clear()  # Clear any pre-existing session data
             session['username'] = username
             session['created_at'] = time.time()  # Fixed creation timestamp
-            session['sid'] = str(uuid.uuid4())  # Unique session identifier
+            session['sid'] = str(uuid.uuid4())   # Unique session identifier
             session.permanent = True
-            # Add the session ID to the active sessions store
             active_sessions[session['sid']] = session['created_at']
-            return redirect(url_for('chat_interface'))
+            return redirect(url_for('landing'))
 
         logging.warning(f"Failed login attempt for username: {username}")
         return render_template('login.html', error='Invalid username or password')
@@ -202,9 +203,9 @@ def chat_interface():
 def logout():
     sid = session.get('sid')
     if sid and sid in active_sessions:
-        del active_sessions[sid]  # Invalidate the session server-side
+        del active_sessions[sid]
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('landing'))
 
 
 @app.route('/JSON/chat', methods=["POST"])
