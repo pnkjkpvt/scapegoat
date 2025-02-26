@@ -3,7 +3,7 @@ import os
 import random
 import time
 from datetime import timedelta
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_from_directory
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from functools import wraps
 
 from flask_httpauth import HTTPTokenAuth
@@ -167,7 +167,6 @@ def landing():
 
 @app.route('/auth', methods=['GET', 'POST'])
 def login():
-    # If user is already logged in, redirect to landing page
     if 'username' in session and 'sid' in session:
          return redirect(url_for('landing'))
 
@@ -185,6 +184,7 @@ def login():
             session['sid'] = str(uuid.uuid4())   # Unique session identifier
             session.permanent = True
             active_sessions[session['sid']] = session['created_at']
+            flash("You have successfully logged in!", "success")
             return redirect(url_for('landing'))
 
         logging.warning(f"Failed login attempt for username: {username}")
@@ -205,6 +205,7 @@ def logout():
     if sid and sid in active_sessions:
         del active_sessions[sid]
     session.clear()
+    flash("You have successfully logged out!", "success")
     return redirect(url_for('landing'))
 
 

@@ -12,6 +12,18 @@
             background: #f4f7f6;
             color: #333;
         }
+        /* Flash Banner Styles */
+        #flash-banner {
+            background-color: #4CAF50; /* Green background */
+            color: #fff;
+            padding: 10px;
+            position: fixed;
+            top: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 1001;
+            font-weight: 500;
+        }
         .navbar {
             display: flex;
             justify-content: space-between;
@@ -121,6 +133,17 @@
     </style>
 </head>
 <body>
+    <!-- Flash Banner -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div id="flash-banner">
+          {% for category, message in messages %}
+              {{ message }}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
     <!-- Navigation Bar -->
     <div class="navbar">
         <img src="/static/logo.svg" alt="Scapegoat" class="logo">
@@ -179,5 +202,15 @@
     <div class="footer">
         &copy; {{ year or "2025" }} Scapegoat Chatbot. All rights reserved.
     </div>
+
+    <!-- JavaScript to Hide Flash Banner After 3 Seconds -->
+    <script>
+        setTimeout(function(){
+            var banner = document.getElementById('flash-banner');
+            if(banner) {
+                banner.style.display = 'none';
+            }
+        }, 3000); // Hide after 3000 milliseconds (3 seconds)
+    </script>
 </body>
 </html>
