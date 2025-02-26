@@ -33,11 +33,11 @@ app.config.update(
 # Global dictionary to keep track of active sessions
 active_sessions = {}
 
-auth = HTTPTokenAuth(scheme='Bearer')
+token_auth = HTTPTokenAuth(scheme='Bearer')
 
 
 # Token verification function
-@auth.verify_token
+@token_auth.verify_token
 def verify_token(token):
     if token == API_TOKEN:
         return True
@@ -64,24 +64,6 @@ limiter = Limiter(
     default_limits=["2000 per day", "200 per hour"],
     storage_uri="memory://"
 )
-
-
-# Decorator session auth
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'username' not in session:
-            return redirect(url_for('login'))
-
-        created_at = session.get('created_at')
-        # Check if the session has expired based on fixed creation time
-        if created_at is None or time.time() - created_at > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
-            session.clear()  # Expire the session
-            return redirect(url_for('login'))
-
-        return f(*args, **kwargs)
-
-    return decorated_function
 
 
 logging.basicConfig(level=logging.INFO)
@@ -145,6 +127,32 @@ COUPON_RESPONSES = [
 ]
 
 
+# Decorator for session auth
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session or 'sid' not in session:
+            return redirect(url_for('login'))
+
+        sid = session['sid']
+        created_at = session.get('created_at')
+        # Check for fixed lifetime expiration
+        if not created_at or time.time() - created_at > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
+            # Also remove the session from the active sessions store if expired
+            if sid in active_sessions:
+                del active_sessions[sid]
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Verify that the session ID is still valid in the server store
+        if sid not in active_sessions:
+            session.clear()
+            return redirect(url_for('login'))
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @app.route('/health')
 def health():
     return jsonify({"status": "healthy"}), 200
@@ -158,8 +166,7 @@ def index():
 
 @app.route('/auth', methods=['GET', 'POST'])
 def login():
-    # If already authenticated, redirect to the chat interface without clearing the session.
-    if 'username' in session:
+    if 'username' in session and 'sid' in session:
         return redirect(url_for('chat_interface'))
 
     if request.method == 'POST':
@@ -172,8 +179,11 @@ def login():
         if username in USERS and check_password_hash(USERS[username], password):
             session.clear()  # Clear any pre-existing session data
             session['username'] = username
-            session['created_at'] = time.time()  # Store the creation timestamp
-            session.permanent = True  # Mark the session as permanent so that Flask uses PERMANENT_SESSION_LIFETIME
+            session['created_at'] = time.time()  # Fixed creation timestamp
+            session['sid'] = str(uuid.uuid4())  # Unique session identifier
+            session.permanent = True
+            # Add the session ID to the active sessions store
+            active_sessions[session['sid']] = session['created_at']
             return redirect(url_for('chat_interface'))
 
         logging.warning(f"Failed login attempt for username: {username}")
@@ -190,12 +200,15 @@ def chat_interface():
 
 @app.route('/logout')
 def logout():
+    sid = session.get('sid')
+    if sid and sid in active_sessions:
+        del active_sessions[sid]  # Invalidate the session server-side
     session.clear()
     return redirect(url_for('login'))
 
 
 @app.route('/JSON/chat', methods=["POST"])
-@auth.login_required()
+@token_auth.login_required()
 # @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat_json():
     return chat()
