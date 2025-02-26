@@ -74,6 +74,19 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         # Check if user is logged in
         if 'username' not in session:
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Validate session ID
+        if 'session_id' not in session:
+            session.clear()
+            return redirect(url_for('login'))
+
+        # Verify session ID matches current request
+        current_session_id = get_session_id()
+        if session['session_id'] != current_session_id:
+            logging.warning(f"Session ID mismatch. Possible session hijacking attempt.")
+            session.clear()
             return redirect(url_for('login'))
 
         # Check if session is expired
