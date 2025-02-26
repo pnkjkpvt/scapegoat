@@ -8,15 +8,9 @@ from functools import wraps
 
 from flask_httpauth import HTTPTokenAuth
 from werkzeug.security import generate_password_hash, check_password_hash
+import uuid
 
-# Security configurations
-SECRET_KEY = os.urandom(32)  # Generate a random secret key on startup
-SESSION_COOKIE_SECURE = True  # Only send cookies over HTTPS
-SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
-SESSION_COOKIE_SAMESITE = 'Lax'  # Protect against CSRF
-PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)  # Session timeout after 30 minutes
-
-# Move sensitive data to environment variables
+# Hardcoded API token for testing
 API_TOKEN = os.getenv('API_TOKEN', '40a88ef3694a37489c0e045041d0ba4e')
 # Hardcoded user credentials
 USERS = {'admin': generate_password_hash('password123')}
@@ -24,14 +18,20 @@ GIVE_UP_THRESHOLD = 0.9
 
 # Initialize Flask app with security headers
 app = Flask(__name__, static_url_path='/static', static_folder='static')
+
+# App Security configurations
+SECRET_KEY = os.urandom(32)  # Generate a random secret key on startup
+PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)  # Session timeout after 30 minutes
 app.secret_key = SECRET_KEY
 app.config.update(
-    SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
-    SESSION_COOKIE_HTTPONLY=SESSION_COOKIE_HTTPONLY,
-    SESSION_COOKIE_SAMESITE=SESSION_COOKIE_SAMESITE,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=PERMANENT_SESSION_LIFETIME,
-    # SESSION_REFRESH_EACH_REQUEST=True,
+    SESSION_REFRESH_EACH_REQUEST=False  # Fixed expiration from creation time
 )
+# Global dictionary to keep track of active sessions
+active_sessions = {}
 
 auth = HTTPTokenAuth(scheme='Bearer')
 
@@ -66,24 +66,19 @@ limiter = Limiter(
 )
 
 
-# Enhanced login required decorator with support for both session and token auth
+# Decorator session auth
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # check for session authentication
         if 'username' not in session:
-            session.clear()  # Clear any partial session data
             return redirect(url_for('login'))
 
-        # Check if session is expired
-        if 'last_activity' in session:
-            last_activity = session['last_activity']
-            if time.time() - last_activity > PERMANENT_SESSION_LIFETIME.total_seconds():
-                session.clear()  # Clear expired session
-                return redirect(url_for('login'))
+        created_at = session.get('created_at')
+        # Check if the session has expired based on fixed creation time
+        if created_at is None or time.time() - created_at > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
+            session.clear()  # Expire the session
+            return redirect(url_for('login'))
 
-        # Update last activity
-        session['last_activity'] = time.time()
         return f(*args, **kwargs)
 
     return decorated_function
@@ -162,11 +157,10 @@ def index():
 
 
 @app.route('/auth', methods=['GET', 'POST'])
-# @limiter.limit("50 per minute")  # Rate limit login attempts
 def login():
-    # Clear any existing session when accessing login page
-    if request.method == 'GET':
-        session.clear()
+    # If already authenticated, redirect to the chat interface without clearing the session.
+    if 'username' in session:
+        return redirect(url_for('chat_interface'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -176,13 +170,12 @@ def login():
             return render_template('login.html', error='Username and password are required')
 
         if username in USERS and check_password_hash(USERS[username], password):
-            session.clear()  # Clear any existing session
+            session.clear()  # Clear any pre-existing session data
             session['username'] = username
-            session['last_activity'] = time.time()
-            session.permanent = True  # Use permanent session with lifetime
+            session['created_at'] = time.time()  # Store the creation timestamp
+            session.permanent = True  # Mark the session as permanent so that Flask uses PERMANENT_SESSION_LIFETIME
             return redirect(url_for('chat_interface'))
 
-        # Log failed login attempts
         logging.warning(f"Failed login attempt for username: {username}")
         return render_template('login.html', error='Invalid username or password')
 
@@ -229,9 +222,7 @@ def chat():
         if len(message) > 500:  # Limit message length
             return jsonify({"error": "Message too long"}), 400
 
-        # Get username from either session or API token
-        username = session.get('username', 'API_USER') if 'username' in session else 'API_USER'
-        logging.info(f"Message from {username}: {message}")
+        logging.info(f"Message: {message}")
 
         response = None
         # Greetings
