@@ -54,17 +54,6 @@ def add_security_headers(response):
     return response
 
 
-# Rate limiting
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["2000 per day", "200 per hour"],
-    storage_uri="memory://"
-)
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -211,14 +200,12 @@ def logout():
 
 @app.route('/JSON/chat', methods=["POST"])
 @token_auth.login_required()
-# @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat_json():
     return chat()
 
 
 @app.route('/UI/chat', methods=["POST"])
 @login_required
-# @limiter.limit("20 per minute")  # Rate limit chat messages
 def chat_ui():
     return chat()
 
